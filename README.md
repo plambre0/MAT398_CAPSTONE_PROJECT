@@ -2,7 +2,7 @@ Dataset Sources
 data.cityofchicago.org
 mhanational.org
 
-References
+References <br>
 Schincariol, A., Orrù, G., Otgaar, H., Sartori, G., & Scarpazza, C. (2024). 
 Posttraumatic stress disorder (PTSD) prevalence: An umbrella review. 
 *Psychological Medicine*. https://doi.org/10.1017/S0033291724002319
