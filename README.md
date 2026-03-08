@@ -1,6 +1,6 @@
-Dataset Sources
-data.cityofchicago.org
-mhanational.org
+Dataset Sources <br>
+data.cityofchicago.org <br>
+mhanational.org <br>
 
 References <br>
 Schincariol, A., Orrù, G., Otgaar, H., Sartori, G., & Scarpazza, C. (2024). 
