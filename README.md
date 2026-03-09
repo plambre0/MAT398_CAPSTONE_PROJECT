@@ -1,6 +1,6 @@
-<center> 
-  Citations 
-</center>
+<p align="center">
+  Citations
+</p>
 City of Chicago. (2024). *Crimes – 2001 to present*. Chicago Data Portal.  <br>
 https://data.cityofchicago.org <br>
 Mental Health America. (2024). *Mental Health America screening data*.  <br>
