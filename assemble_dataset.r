@@ -12,6 +12,7 @@ screens <- read.csv(
 names(screens)[2] <- "zip"
 zip_pop <- read.csv("Chicago_Population_Counts.csv")
 crimes <- read.csv("Crimes_-_2001_to_Present_20260307.csv")
+covars <- read.csv("Chicago Health Atlas Data Download.csv")
 
 crime_data <- crimes %>%
   select(
@@ -46,6 +47,20 @@ crime_sf <- st_as_sf(
 crime_zip <- st_join(crime_sf, zip_shapes)
 crime_zip$zip <- as.character(crime_zip$zip)
 sort(table(crime_zip$zip))
+
+covars <- data.frame(covars[c(1,5:62), 2],
+                     covars[c(1,5:62), 5],
+                     covars[c(1,5:62), 7],
+                     covars[c(1,5:62), 9],
+                     covars[c(1,5:62), 11],
+                     covars[c(1,5:62), 13],
+                     covars[c(1,5:62), 15],
+                     covars[c(1,5:62), 17])
+
+names(covars) <- c("zip", "med_income", "uninsured_rate", "pm25", "hs_grad_rate", "unemployment_rate", "hardship_index", "prop_white")
+covars <- covars[2:59, ]
+covars <- as.data.frame(apply(covars, MARGIN = 2, FUN = as.numeric))
+covars$zip <- as.factor(covars$zip)
 
 violent_types <- c(
   "HOMICIDE",
@@ -97,4 +112,9 @@ chicago_crime_ptsd <- zip_crime_summary %>%
   left_join(ptsd_data, by = "zip") %>%
   na.omit()
 
+chicago_crime_ptsd <- chicago_crime_ptsd %>%
+  left_join(covars, by = "zip") %>%
+  na.omit()
+
+names(chicago_crime_ptsd)
 chicago_crime_ptsd
