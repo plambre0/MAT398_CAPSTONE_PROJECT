@@ -118,3 +118,25 @@ ggplot(spatial_data, aes(x = violent_rate, y = ptsd_est_prob_ctrl)) +
     x = "Violent Crime Rate",
     y = "Estimated PTSD Probability"
   )
+
+spatial_data$ptsd_est_prob_car <- fitted(model_car)[,1] / spatial_data$trials
+
+ggplot(spatial_data) +
+  geom_sf(aes(fill = ptsd_est_prob_car)) +
+  scale_fill_viridis_c(labels = percent) +
+  labs(
+    title = "Estimated PTSD Risk by ZIP Code (CAR Model)",
+    fill = "PTSD Probability"
+  ) +
+  theme_minimal()
+
+library(loo)
+
+loo_compare(
+  loo(model_crime),
+  loo(model_controls),
+  loo(model_interaction),
+  loo(model_spline),
+  loo(model_random_zip),
+  loo(model_car)
+)
