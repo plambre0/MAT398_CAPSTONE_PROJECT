@@ -1,8 +1,8 @@
-Dataset Sources <br>
-data.cityofchicago.org <br>
-mhanational.org <br>
-
-References <br>
+Citations <br>
+City of Chicago. (2024). *Crimes – 2001 to present*. Chicago Data Portal.  
+https://data.cityofchicago.org
+Mental Health America. (2024). *Mental Health America screening data*.  
+https://mhanational.org
 Schincariol, A., Orrù, G., Otgaar, H., Sartori, G., & Scarpazza, C. (2024). <br>
 Posttraumatic stress disorder (PTSD) prevalence: An umbrella review. <br>
 *Psychological Medicine*. https://doi.org/10.1017/S0033291724002319 <br>
