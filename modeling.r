@@ -11,7 +11,6 @@ crime_ptsd_clean <- chicago_crime_ptsd %>%
   )
 
 crime_ptsd_final <- chicago_crime_ptsd %>%
-  filter(!zip %in% c("60601", "60602", "60603", "60604")) %>%
   mutate(
     ptsd_cases = round(ptsd_rate * population),
     log_violent = log(violent_rate),
