@@ -101,11 +101,19 @@ model_random_zip <- brm(
   control = list(adapt_delta = 0.99)
 )
 
+nb <- poly2nb(spatial_data)
+W <- nb2mat(nb, style = "B", zero.policy = TRUE)
+rownames(W) <- spatial_data$zip
+colnames(W) <- spatial_data$zip
+spatial_data$zip <- factor(spatial_data$zip, levels = spatial_data$zip)
+all(rownames(W) == levels(spatial_data$zip))
+
 model_car <- brm(
   ptsd_cases | trials(trials) ~ 
     log_violent + hardship_s + uninsured_s +
     car(W, gr = zip),
   data = spatial_data,
+  data2 = list(W = W),
   family = beta_binomial(),
   prior = priors,
   chains = 4,
@@ -137,12 +145,12 @@ ggplot(spatial_data) +
   ) +
   theme_minimal()
 
-# library(loo)
-# loo_compare(
-#   loo(model_crime),
-#   loo(model_controls),
-#   loo(model_interaction),
-#   loo(model_spline),
-#   loo(model_random_zip),
-#   loo(model_car)
-# )
+library(loo)
+loo_compare(
+  loo(model_crime),
+  loo(model_controls),
+  loo(model_interaction),
+  loo(model_spline),
+  loo(model_random_zip),
+  loo(model_car)
+)
