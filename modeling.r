@@ -10,7 +10,6 @@ library(scales)
 #Using beta binomial distr to account for variance from geographically 
 #localied concentration mentioned in (Weisburd et al., 2018)
 
-
 options(tigris_use_cache = TRUE)
 
 crime_ptsd <- chicago_crime_ptsd %>%
@@ -31,10 +30,15 @@ zcta_chicago <- zcta %>%
   rename(zip = ZCTA5CE20)
 
 spatial_data <- zcta_chicago %>%
-  left_join(crime_ptsd, by = "zip")
+  left_join(crime_ptsd, by = "zip") %>%
+  filter(!is.na(ptsd_cases)) 
 
 nb <- poly2nb(spatial_data)
 W <- nb2mat(nb, style = "B", zero.policy = TRUE)
+rownames(W) <- spatial_data$zip
+colnames(W) <- spatial_data$zip
+
+spatial_data$zip <- factor(spatial_data$zip, levels = rownames(W))
 
 priors <- c(
   prior(normal(-3,0.5), class = Intercept),
@@ -44,69 +48,52 @@ priors <- c(
 
 model_crime <- brm(
   ptsd_cases | trials(trials) ~ log_violent,
-  data = crime_ptsd,
+  data = spatial_data,
   family = beta_binomial(),
   prior = priors,
-  chains = 4,
-  iter = 2000,
-  cores = 4,
+  chains = 4, iter = 2000, cores = 4,
   control = list(adapt_delta = 0.99)
 )
 
 model_controls <- brm(
   ptsd_cases | trials(trials) ~ 
     log_violent + hardship_s + uninsured_s + income_s,
-  data = crime_ptsd,
+  data = spatial_data,
   family = beta_binomial(),
   prior = priors,
-  chains = 4,
-  iter = 2000,
-  cores = 4,
+  chains = 4, iter = 2000, cores = 4,
   control = list(adapt_delta = 0.99)
 )
 
 model_interaction <- brm(
   ptsd_cases | trials(trials) ~ 
     log_violent * hardship_s + uninsured_s,
-  data = crime_ptsd,
+  data = spatial_data,
   family = beta_binomial(),
   prior = priors,
-  chains = 4,
-  iter = 2000,
-  cores = 4,
+  chains = 4, iter = 2000, cores = 4,
   control = list(adapt_delta = 0.99)
 )
 
 model_spline <- brm(
   ptsd_cases | trials(trials) ~ 
     s(log_violent) + hardship_s + uninsured_s,
-  data = crime_ptsd,
+  data = spatial_data,
   family = beta_binomial(),
   prior = priors,
-  chains = 4,
-  iter = 2000,
-  cores = 4,
+  chains = 4, iter = 2000, cores = 4,
   control = list(adapt_delta = 0.99)
 )
 
 model_random_zip <- brm(
   ptsd_cases | trials(trials) ~ 
     log_violent + hardship_s + uninsured_s + (1|zip),
-  data = crime_ptsd,
+  data = spatial_data,
   family = beta_binomial(),
   prior = priors,
-  chains = 4,
-  iter = 2000,
-  cores = 4,
+  chains = 4, iter = 2000, cores = 4,
   control = list(adapt_delta = 0.99)
 )
-
-nb <- poly2nb(spatial_data)
-W <- nb2mat(nb, style = "B", zero.policy = TRUE)
-rownames(W) <- spatial_data$zip
-colnames(W) <- spatial_data$zip
-spatial_data$zip <- factor(spatial_data$zip, levels = spatial_data$zip)
-all(rownames(W) == levels(spatial_data$zip))
 
 model_car <- brm(
   ptsd_cases | trials(trials) ~ 
@@ -116,41 +103,18 @@ model_car <- brm(
   data2 = list(W = W),
   family = beta_binomial(),
   prior = priors,
-  chains = 4,
-  iter = 2000,
-  cores = 4,
+  chains = 4, iter = 2000, cores = 4,
   control = list(adapt_delta = 0.99)
 )
 
-crime_ptsd$ptsd_est <- fitted(model_controls, scale = "response")[,1]
+spatial_data$ptsd_est_prob_ctrl <- fitted(model_controls)[,1] / spatial_data$trials
 
-ggplot(crime_ptsd, aes(x = violent_rate, y = ptsd_est)) +
+ggplot(spatial_data, aes(x = violent_rate, y = ptsd_est_prob_ctrl)) +
   geom_point(alpha = 0.6) +
   scale_x_continuous(labels = percent) +
   scale_y_continuous(labels = percent_format(accuracy = 0.1)) +
   labs(
-    title = "Posterior Estimated PTSD Probability",
+    title = "Posterior Estimated PTSD Probability (Controls Model)",
     x = "Violent Crime Rate",
     y = "Estimated PTSD Probability"
   )
-
-spatial_data$ptsd_est <- fitted(model_car, scale = "response")[,1]
-
-ggplot(spatial_data) +
-  geom_sf(aes(fill = ptsd_est)) +
-  scale_fill_viridis_c() +
-  labs(
-    title = "Estimated PTSD Risk by ZIP Code",
-    fill = "PTSD Probability"
-  ) +
-  theme_minimal()
-
-library(loo)
-loo_compare(
-  loo(model_crime),
-  loo(model_controls),
-  loo(model_interaction),
-  loo(model_spline),
-  loo(model_random_zip),
-  loo(model_car)
-)
