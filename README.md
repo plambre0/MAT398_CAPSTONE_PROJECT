@@ -1,4 +1,4 @@
-<div style="text-align: center;"> Citations <br></div>
+<div style="text-align: center;"> Citations <br>
 City of Chicago. (2024). *Crimes – 2001 to present*. Chicago Data Portal.  <br>
 https://data.cityofchicago.org <br>
 Mental Health America. (2024). *Mental Health America screening data*.  <br>
