@@ -41,6 +41,7 @@ spatial_data <- read.csv("Crimes_-_2001_to_Present_20260307.csv") %>%
 coords <- st_coordinates(st_centroid(spatial_data))
 spatial_data$lat <- coords[,2]
 spatial_data$long <- coords[,1]
+spatial_data <- as.data.frame(spatial_data)
 
 spatial_data_scaled <- spatial_data %>%
   mutate(across(
