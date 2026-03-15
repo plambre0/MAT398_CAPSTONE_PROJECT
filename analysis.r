@@ -7,6 +7,10 @@ library(scales)
 library(car)
 library(hglm)
 
+nb <- poly2nb(geometry)
+adj_matrix <- nb2mat(nb, style = "B", zero.policy = TRUE)
+listw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+
 summary(spatial_data_scaled)
 hist(spatial_data_scaled$med_income_s, breaks = 20)
 hist(spatial_data_scaled$uninsured_rate_s, breaks = 20)
@@ -138,8 +142,8 @@ loo(model_car)
 pp_check(model_car, type = "dens_overlay")
 pp_check(model_car, type = "stat")
 bayes_R2(model_car)
-model_car_res <- residuals(contr_bin, type="pearson")
-moran.test(model_car_res, )
+model_car_res <- residuals(model_car, type="pearson", summary = TRUE)[, "Estimate"]
+moran.test(model_car_res, listw)
 exp(posterior_summary(model_car, "b_log_violent_s"))
 conditional_effects(model_car, "log_violent_s")
 
