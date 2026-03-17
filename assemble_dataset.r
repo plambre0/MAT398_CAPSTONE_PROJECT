@@ -1,55 +1,57 @@
 library(dplyr)
-library(tidyr)
 library(sf)
 library(tigris)
+library(spdep)
 
-screens <- read.csv("Screens # per 100K Table.csv", sep = "\t", fileEncoding = "UTF-16LE") %>%
-  rename(zip = 2, ptsd_rate = X..per.100K) %>%
-  mutate(zip = as.character(zip), ptsd_rate = ptsd_rate / 100000)
+cha_raw <- read.csv("cha_raw.csv")
+cha <- cha_raw[5:62, c(2, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29)]
 
-zip_pop <- read.csv("Chicago_Population_Counts.csv") %>%
-  filter(Year == 2020) %>%
-  transmute(zip = as.character(Geography), population = Population...Total)
+names(cha) <- c(
+  "zip",
+  "house_cost_burden",
+  "loc_afford_idx",
+  "active_transport",
+  "foreign_born",
+  "white_pct",
+  "population",
+  "poverty_rate",
+  "unemployment_rate",
+  "hs_grad_rate",
+  "food_insecurity_rate",
+  "violent_crime",
+  "drug_crime",
+  "medicaid_coverage"
+)
 
-covars_raw <- read.csv("Chicago Health Atlas Data Download.csv")
-covars <- covars_raw[c(1, 5:62), c(2, 5, 7, 9, 11, 13, 15, 17)] %>%
-  setNames(c("zip", "med_income", "uninsured_rate", "pm25", "hs_grad_rate", "unemployment_rate", "hardship_index", "prop_white")) %>%
-  slice(-1) %>%
-  mutate(across(-zip, as.numeric), zip = as.character(zip))
+cha$zip <- as.factor(cha$zip)
+cha[, 2:14] <- apply(cha[, 2:14], 2, as.numeric)
+cha$violent_crime_rate <- cha$violent_crime/cha$population
+cha$drug_crime_rate <- cha$drug_crime/cha$population
 
-violent_types <- c("HOMICIDE", "ASSAULT", "BATTERY", "ROBBERY", "CRIMINAL SEXUAL ASSAULT")
+screens <- read.csv("ptsd_screens.csv", sep = "\t", fileEncoding = "UTF-16LE")
+screens <- screens[, c(2,4,5)]
+names(screens) <- c("zip", "per_100k", "pos_res")
+screens$ptsd_rate <- screens$per_100k/100000
+
+screens$zip <- as.factor(screens$zip)
+
+chicago <- dplyr::left_join(cha, screens, join_by("zip"))
+chicago <- subset(chicago, population > 0)
+
+summary(chicago)
+
 zip_shapes <- zctas(cb = TRUE, year = 2020, progress_bar = FALSE) %>% st_transform(4326)
+names(zip_shapes)[1] <- "zip"
+zip_shapes <- zip_shapes[zip_shapes$zip %in% chicago$zip, c("zip", "geometry")]
+coords <- st_coordinates(st_centroid(zip_shapes))
+zip_shapes$lat <- coords[,2]
+zip_shapes$long <- coords[,1]
+zip_chicago <- as.data.frame(zip_shapes)
+geometry <- zip_shapes$geometry
 
-spatial_data <- read.csv("Crimes_-_2001_to_Present_20260307.csv") %>%
-  filter(!is.na(Latitude), !is.na(Longitude), Primary.Type %in% violent_types) %>%
-  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326) %>%
-  st_join(zip_shapes %>% select(zip = ZCTA5CE20)) %>%
-  st_drop_geometry() %>%
-  count(zip, Primary.Type) %>%
-  pivot_wider(names_from = Primary.Type, values_from = n, values_fill = 0) %>%
-  inner_join(zip_pop, by = "zip") %>%
-  inner_join(screens, by = "zip") %>%
-  inner_join(covars, by = "zip") %>%
-  mutate(
-    violent_rate = rowSums(across(all_of(violent_types))) / population,
-    ptsd_cases = round(ptsd_rate * population),
-    log_violent = log(violent_rate + 1)
-  ) %>%
-  inner_join(zip_shapes %>% select(zip = ZCTA5CE20), by = "zip") %>%
-  st_as_sf()
+zip_shapes <- zip_shapes[match(chicago$zip, zip_shapes$zip), ]
+nb <- poly2nb(zip_shapes, queen = TRUE)
+adj_matrix <- nb2mat(nb, style = "B", zero.policy = TRUE)
+colnames(adj_matrix) <- rownames(adj_matrix) <- chicago$zip
 
-coords <- st_coordinates(st_centroid(spatial_data))
-spatial_data$lat <- coords[,2]
-spatial_data$long <- coords[,1]
-spatial_data <- as.data.frame(spatial_data)
-
-spatial_data_scaled <- spatial_data %>%
-  mutate(across(
-    c(med_income, uninsured_rate, pm25, hs_grad_rate, 
-      unemployment_rate, hardship_index, prop_white, 
-      log_violent, lat, long), 
-    ~ as.numeric(scale(.)), 
-    .names = "{.col}_s"
-  ))
-
-summary(spatial_data_scaled %>% select(contains("_s")))
+chicago_scaled <- as.data.frame(apply(chicago[, c(2:19)], 2, FUN = scale))
