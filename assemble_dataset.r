@@ -55,3 +55,5 @@ adj_matrix <- nb2mat(nb, style = "B", zero.policy = TRUE)
 colnames(adj_matrix) <- rownames(adj_matrix) <- chicago$zip
 
 chicago_scaled <- as.data.frame(apply(chicago[, c(2:19)], 2, FUN = scale))
+chicago_scaled$population <- chicago$population
+chicago_scaled$pos_res <- chicago$pos_res
