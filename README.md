@@ -2,8 +2,7 @@
   Citations
 </p>
 <p style="padding-left: 36px; text-indent: -36px;">
-City of Chicago. (2024). <em>Crimes – 2001 to present</em>. Chicago Data Portal. 
-https://data.cityofchicago.org
+Chicago Health Atlas. (2026). https://chicagohealthatlas.org
 </p>
 
 <p style="padding-left: 36px; text-indent: -36px;">
