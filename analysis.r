@@ -1,156 +1,323 @@
-library(sf)
-library(spdep)
-library(dplyr)
-library(brms)
-library(ggplot2)
-library(scales)
 library(car)
-library(hglm)
+library(glmmTMB)
+library(tmap)
+library(spdep)
+library(brms)
+library(tidybayes)
+library(lavaan)
+library(lavaanPlot)
 
-nb <- poly2nb(geometry)
-adj_matrix <- nb2mat(nb, style = "B", zero.policy = TRUE)
-listw <- nb2listw(nb, style = "W", zero.policy = TRUE)
 
-summary(spatial_data_scaled)
-hist(spatial_data_scaled$med_income_s, breaks = 20)
-hist(spatial_data_scaled$uninsured_rate_s, breaks = 20)
-hist(spatial_data_scaled$pm25_s, breaks = 20)
-hist(spatial_data_scaled$hs_grad_rate_s, breaks = 20)
-hist(spatial_data_scaled$unemployment_rate_s, breaks = 20)
-hist(spatial_data_scaled$hardship_index_s, breaks = 20)
-hist(spatial_data_scaled$prop_white_s, breaks = 20)
-hist(spatial_data_scaled$log_violent_s, breaks = 20)
+lapply(names(chicago_scaled), function(col_name) {
+  plot(density(chicago_scaled[[col_name]]), main = col_name)
+})
 
-cor(spatial_data_scaled %>% select(contains("_s")),
-    use="complete.obs", method = "kendall")
-pheatmap::pheatmap(cor(spatial_data_scaled %>% select(contains("_s"))))
+chicago_scaled_transf <- chicago_scaled
+chicago_scaled_transf[, c("loc_afford_idx",
+                          "active_transport",
+                          "poverty_rate",
+                          "unemployment_rate",
+                          "hs_grad_rate",
+                          "food_insecurity_rate",
+                          "violent_crime_rate",
+                          "drug_crime_rate",
+                          "ptsd_rate")] <- 
+  apply(chicago_scaled[, c("loc_afford_idx",
+                           "active_transport",
+                           "poverty_rate",
+                           "unemployment_rate",
+                           "hs_grad_rate",
+                           "food_insecurity_rate",
+                           "violent_crime_rate",
+                           "drug_crime_rate",
+                           "ptsd_rate")], 2, 
+        function(x){sign(x) * abs(x)^(1/3)})
 
-no_contr_bin <- glm(cbind(ptsd_cases, population - ptsd_cases) ~ 
-                      log_violent_s,
-                    data = spatial_data_scaled,
-                    family = binomial())
-summary(no_contr_bin)
+cor(chicago_scaled)
+cor(chicago_scaled_transf)
 
-contr_bin <- glm(cbind(ptsd_cases, population - ptsd_cases) ~ 
-                   log_violent_s + med_income_s + uninsured_rate_s + 
-                   hs_grad_rate_s + unemployment_rate_s +
-                   lat_s * long_s,
-                 data = spatial_data_scaled,
-                 family = binomial())
-summary(contr_bin)
-vif(contr_bin)
 
-priors_informed <- c(
-  set_prior("normal(-5, 1)", class = "Intercept"),
-  set_prior("normal(0, 1)", class = "b"),
-  set_prior("exponential(1)", class = "phi")
+cor(chicago_scaled_transf[, c("ptsd_rate", "violent_crime_rate", "poverty_rate",
+                          "hs_grad_rate", "white_pct", "foreign_born", 
+                          "drug_crime_rate")])
+
+chicago_prcomp <- prcomp(chicago_scaled_transf)
+plot(chicago_prcomp)
+chicago_fa <- factanal(chicago_scaled_transf[, c("loc_afford_idx",
+                                                 "active_transport",
+                                                 "foreign_born",
+                                                 "white_pct",
+                                                 "population",
+                                                 "poverty_rate",
+                                                 "house_cost_burden",
+                                                 "unemployment_rate",
+                                                 "hs_grad_rate",
+                                                 "food_insecurity_rate",
+                                                 "medicaid_coverage",
+                                                 "violent_crime_rate",
+                                                 "drug_crime_rate")], 
+                       factors = 5)
+chicago_model <- '
+  Hardship =~ poverty_rate + medicaid_coverage + loc_afford_idx
+  Safety   =~ violent_crime_rate + unemployment_rate + active_transport + white_pct
+'
+chicago_model_fit <- lavaan::cfa(chicago_model, data = chicago_scaled_transf)
+lavaan::summary(chicago_model_fit)
+lavaan::standardizedSolution(chicago_model_fit)
+lavaan::fitMeasures(chicago_model_fit, c("cfi", "tli", "rmsea", "srmr", "aic", "bic"))
+
+glm_no_contr <- glm(ptsd_rate ~ violent_crime_rate, 
+                    data = chicago_scaled_transf, 
+                    family = gaussian())
+summary(glm_no_contr)
+glm_contr <- glm(ptsd_rate ~ violent_crime_rate + poverty_rate + foreign_born + white_pct,
+                 data = chicago_scaled_transf, family = gaussian())
+summary(glm_contr)
+vif(glm_contr)
+avPlots(glm_contr)
+par(mfrow = c(2,2))
+plot(glm_contr)
+dev.off()
+qqnorm(residuals(glm_contr))
+qqline(residuals(glm_contr))
+shapiro.test(residuals(glm_contr))
+library(lmtest)
+bptest(glm_contr)
+summary(influence.measures(glm_contr))
+plot(cooks.distance(glm_contr), type = "h")
+abline(h = 4/length(cooks.distance(glm_contr)), col = "red")
+
+summary(glm(ptsd_rate ~ violent_crime_rate + poverty_rate + 
+              foreign_born + white_pct, 
+            family = gaussian(), 
+            data = chicago_scaled_transf[-c(3, 4, 32), ]))
+
+glm_no_contr <- glm(ptsd_rate ~ poverty_rate, 
+                    family = gaussian(), 
+                    data = chicago_scaled_transf)
+avPlots(glm_contr)
+par(mfrow = c(2,2))
+plot(glm_contr)
+dev.off()
+qqnorm(residuals(glm_contr))
+qqline(residuals(glm_contr))
+shapiro.test(residuals(glm_contr))
+bptest(glm_contr)
+summary(influence.measures(glm_contr))
+
+model_participation <- glm(chicago$pos_res ~ white_pct + poverty_rate, 
+                           family = poisson(), 
+                           offset = log(chicago$population), 
+                           data = chicago_scaled_transf)
+summary(model_participation)
+avPlots(glm_contr)
+par(mfrow = c(2,2))
+plot(glm_contr)
+dev.off()
+qqnorm(residuals(glm_contr))
+qqline(residuals(glm_contr))
+shapiro.test(residuals(glm_contr))
+bptest(glm_contr)
+summary(influence.measures(glm_contr))
+
+model_participation_model_nb <- glmmTMB(chicago$pos_res ~ white_pct + poverty_rate + offset(log(chicago$population)), 
+                                        family = nbinom2, 
+                                        data = chicago_scaled_transf)
+summary(model_participation_model_nb)
+library(performance)
+library(DHARMa)
+simulationOutput <- DHARMa::simulateResiduals(model_participation_model_nb)
+plot(simulationOutput)
+DHARMa::testDispersion(simulationOutput)
+DHARMa::testZeroInflation(simulationOutput)
+DHARMa::testUniformity(simulationOutput)
+
+chicago$zip[as.numeric(names(sort(residuals(model_participation_model_nb, 
+                                            type = "deviance"))))]
+
+summary(glm(chicago$pos_res ~ violent_crime_rate + poverty_rate + foreign_born + white_pct,
+            offset = log(chicago$population), data = chicago_scaled_transf, family = poisson()))
+
+chicago_all <- chicago_scaled_transf
+chicago_all$pos_res <- chicago$pos_res
+chicago_all$population_raw <- chicago$population
+chicago_all$zip <- chicago$zip
+chicago_all$pos <- numFactor(zip_chicago$lat, zip_chicago$long)
+
+model_spatial <- glmmTMB(pos_res ~ violent_crime_rate + poverty_rate + 
+                           foreign_born + white_pct + 
+                           offset(log(population_raw)) +
+                           exp(pos + 0 | zip),
+                         data = chicago_all,
+                         family = nbinom2)
+
+model_final_clean <- glmmTMB(
+  pos_res ~ violent_crime_rate + poverty_rate + foreign_born + white_pct + 
+    offset(log(population_raw)) + 
+    (1 | zip),
+  data = chicago_all,
+  family = nbinom2
+)
+simulationOutput <- DHARMa::simulateResiduals(model_final_clean)
+plot(simulationOutput)
+summary(model_final_clean)
+ranef(model_final_clean)
+VarCorr(model_final_clean)
+AIC(model_participation_model_nb, model_final_clean)
+BIC(model_participation_model_nb, model_final_clean)
+
+W <- nb2mat(nb, style = "B", zero.policy = TRUE)
+rownames(W) <- chicago_all$zip
+
+priors <- c(
+  prior(normal(-6, 2), class = "Intercept"),
+  prior(normal(0.3, 1), class = "b", coef = "violent_crime_rate"),
+  prior(normal(-0.2, 1), class = "b", coef = "poverty_rate"),
+  prior(normal(0.1, 1), class = "b", coef = "white_pct"),
+  prior(normal(0.1, 1), class = "b", coef = "foreign_born"),
+  prior(exponential(1), class = "sdcar"),
+  prior(beta(2, 2), class = "rhocar")
 )
 
-brm_no_contr <- brm(ptsd_cases | trials(population) ~ log_violent_s,
-                    data = spatial_data_scaled,
-                    family = beta_binomial(),
-                    prior = priors_informed,
-                    chains = 4, iter = 2000, cores = 4,
-                    control = list(adapt_delta = 0.99))
-plot(brm_no_contr)
-summary(brm_no_contr)
-nuts_params(brm_no_contr)
-posterior_summary(brm_no_contr, variable = "b_log_violent_s")
-loo(brm_no_contr)
-pp_check(brm_no_contr, type = "dens_overlay")
-pp_check(brm_no_contr, type = "stat")
-bayes_R2(brm_no_contr)
-exp(posterior_summary(brm_no_contr, "b_log_violent_s"))
-conditional_effects(brm_no_contr, "log_violent_s")
-
-brm_contr_no_spat <- brm(ptsd_cases | trials(population) ~ 
-                           log_violent_s + med_income_s + uninsured_rate_s + 
-                           hs_grad_rate_s + unemployment_rate_s,
-                         data = spatial_data_scaled,
-                         family = beta_binomial(),
-                         prior = priors_informed,
-                         chains = 4, iter = 2000, cores = 4,
-                         control = list(adapt_delta = 0.99))
-plot(brm_contr_no_spat)
-summary(brm_contr_no_spat)
-nuts_params(brm_contr_no_spat)
-posterior_summary(brm_contr_no_spat, variable = "b_log_violent_s")
-loo(brm_contr_no_spat)
-pp_check(brm_contr_no_spat, type = "dens_overlay")
-pp_check(brm_contr_no_spat, type = "stat")
-bayes_R2(brm_contr_no_spat)
-exp(posterior_summary(brm_contr_no_spat, "b_log_violent_s"))
-conditional_effects(brm_contr_no_spat, "log_violent_s")
-
-brm_contr_spat <- brm(
-  ptsd_cases | trials(population) ~ log_violent_s + med_income_s +
-    uninsured_rate_s + hs_grad_rate_s + unemployment_rate_s +
-    gp(lat, long),
-  data = spatial_data_scaled,
-  family = beta_binomial(),
-  chains = 2, iter = 5000, cores = 4,
-  prior = priors_informed,
-  control = list(adapt_delta = 0.999)
-)
-plot(brm_contr_spat)
-summary(brm_contr_spat)
-nuts_params(brm_contr_spat)
-posterior_summary(brm_contr_spat, variable = "b_log_violent_s")
-loo(brm_contr_spat)
-pp_check(brm_contr_spat, type = "dens_overlay")
-pp_check(brm_contr_spat, type = "stat")
-bayes_R2(brm_contr_spat)
-exp(posterior_summary(brm_contr_spat, "b_log_violent_s"))
-conditional_effects(brm_contr_spat, "log_violent_s")
-
-model_no_contr_spat <- brm(
-  formula = ptsd_cases | trials(population) ~ log_violent_s + t2(lat_s, long_s),
-  data = spatial_data_scaled,
-  family = beta_binomial(),
-  prior = priors_informed
-)
-plot(model_no_contr_spat)
-summary(model_no_contr_spat)
-nuts_params(model_no_contr_spat)
-posterior_summary(model_no_contr_spat, variable = "b_log_violent_s")
-loo(model_no_contr_spat)
-pp_check(model_no_contr_spat, type = "dens_overlay")
-pp_check(model_no_contr_spat, type = "stat")
-bayes_R2(model_no_contr_spat)
-exp(posterior_summary(model_no_contr_spat, "b_log_violent_s"))
-conditional_effects(model_no_contr_spat, "log_violent_s")
-
-model_car <- brm(
-  formula = ptsd_cases | trials(population) ~ 
-    log_violent_s + uninsured_rate_s + hs_grad_rate_s + 
-    car(adj_matrix, gr = zip, type = "icar"), 
-  data = spatial_data_scaled,
-  data2 = list(adj_matrix = adj_matrix), 
-  family = beta_binomial(),
-  prior = priors_informed,
+model_bayesian_car <- brm(
+  pos_res ~ violent_crime_rate + poverty_rate + foreign_born + white_pct + 
+    offset(log(population_raw)) + 
+    car(W, gr = zip, type = "bym2"), 
+  data = chicago_all,
+  data2 = list(W = W),
+  family = negbinomial(),
   chains = 4, 
   iter = 2000, 
-  cores = 4,
-  control = list(adapt_delta = 0.97,
-                 max_treedepth = 15)
+  cores = 4
 )
-plot(model_car)
-summary(model_car)
-nuts_params(model_car)
-posterior_summary(model_car, variable = "b_log_violent_s")
-loo(model_car)
-pp_check(model_car, type = "dens_overlay")
-pp_check(model_car, type = "stat")
-bayes_R2(model_car)
-model_car_res <- residuals(model_car, type="pearson", summary = TRUE)[, "Estimate"]
-moran.test(model_car_res, listw)
-exp(posterior_summary(model_car, "b_log_violent_s"))
-conditional_effects(model_car, "log_violent_s")
+
+model_bayesian_spatial_final <- brm(
+  pos_res ~ violent_crime_rate + poverty_rate + foreign_born + white_pct + 
+    offset(log(population_raw)) + 
+    car(W, gr = zip, type = "bym2"), 
+  data = chicago_all,
+  data2 = list(W = W),
+  family = negbinomial(),
+  prior = priors,
+  chains = 4, 
+  iter = 4000,
+  warmup = 2000,
+  cores = 4,
+  control = list(adapt_delta = 0.95, max_treedepth = 15)
+)
+pp_check(model_bayesian_spatial_final)
+pp_check(model_bayesian_spatial_final, type = "stat")
+loo(model_bayesian_spatial_final)
+waic(model_bayesian_spatial_final)
+
+spatial_draws <- as.matrix(model_bayesian_spatial_final, variable = "^rcar", regex = TRUE)
+print(dim(spatial_draws)) 
+prob_under <- colMeans(spatial_draws < 0)
 
 loo_compare(
-  loo(brm_no_contr),
-  loo(brm_contr_no_spat),
-  loo(brm_contr_spat),
-  loo(model_no_contr_spat),
-  loo(model_car)
+  loo(model_bayesian_car),
+  loo(model_bayesian_spatial_final)
+)
+
+zip_levels <- levels(chicago_all$zip)
+chicago_all$zip <- droplevels(chicago_all$zip)
+zip_levels <- levels(chicago_all$zip)
+print(length(zip_levels))
+prob_df <- data.frame(zip = zip_levels, prob_under = prob_under)
+zip_shapes_final <- merge(zip_shapes, prob_df, by = "zip")
+head(prob_df[order(-prob_df$prob_under), ], 5)
+
+mu <- predict(model_bayesian_spatial_final)[, 1]
+chicago_all$resid <- (chicago_all$pos_res - mu) / sqrt(mu + (mu^2 / 1254756901)) 
+listw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+
+moran_result <- moran.test(chicago_all$resid, listw)
+print(moran_result)
+local_m <- localmoran(chicago_all$resid, listw)
+chicago_all$quadrant <- "Insignificant"
+m_res <- scale(chicago_all$resid)
+lag_res <- scale(lag.listw(listw, chicago_all$resid))
+chicago_all$quadrant[m_res > 0 & lag_res > 0 & local_m[,5] <= 0.05] <- "High-High"
+chicago_all$quadrant[m_res < 0 & lag_res < 0 & local_m[,5] <= 0.05] <- "Low-Low"
+chicago_all$quadrant[m_res > 0 & lag_res < 0 & local_m[,5] <= 0.05] <- "High-Low"
+chicago_all$quadrant[m_res < 0 & lag_res > 0 & local_m[,5] <= 0.05] <- "Low-High"
+
+zip_shapes_final <- merge(zip_shapes, chicago_all[, c("zip", "quadrant")], by = "zip")
+
+tm_shape(zip_shapes_final) +
+  tm_polygons("quadrant", 
+              palette = c("High-High" = "red", "Low-Low" = "blue", 
+                          "Low-High" = "lightblue", "High-Low" = "pink", 
+                          "Insignificant" = "white"),
+              title = "LISA Cluster Map (Residuals)")
+
+model_sem <- '
+  #Violence is predicted by SES
+  violent_crime_rate ~ a*poverty_rate + foreign_born
+  
+  #PTSD is predicted by Violence and SES
+  # We use the log-transformed or rate-adjusted PTSD screens
+  ptsd_rate ~ b*violent_crime_rate + c_prime*poverty_rate + white_pct
+  
+  indirect := a * b
+  total    := c_prime + (a * b)
+'
+
+fit_sem <- lavaan::sem(model_sem, data = chicago_all)
+lavaan::summary(fit_sem, standardize = TRUE, rsquare = TRUE)
+
+lavaanPlot(model = fit_sem, 
+           labels = c(violent_crime_rate = "Violent Crime", 
+                      poverty_rate = "Poverty Preve", 
+                      white_pct = "Percent White", 
+                      foreign_born = "Foreign Born",
+                      pos_res = "PTSD Screens"),
+           node_options = list(shape = "box", fontname = "Helvetica"), 
+           edge_options = list(color = "grey"), 
+           coefs = TRUE, 
+           stand = TRUE, 
+           stars = c("regress"))
+
+bf_violence <- bf(violent_crime_rate ~ poverty_rate + foreign_born + car(W, gr = zip, type = "bym2"))
+bf_ptsd     <- bf(pos_res ~ violent_crime_rate + poverty_rate + white_pct + 
+                    offset(log(population_raw)) + car(W, gr = zip, type = "bym2"))
+
+fit_spatial_sem <- brm(
+  bf_violence + bf_ptsd + set_rescor(FALSE), 
+  data = chicago_all,
+  data2 = list(W = W),
+  family = list(gaussian(), negbinomial()),
+  prior = c(
+    prior(normal(0, 1), class = "b", resp = "violentcrimerate"),
+    prior(normal(0, 1), class = "b", resp = "posres")
+  ),
+  chains = 4, iter = 4000, warmup = 2000, cores = 4,
+  control = list(adapt_delta = 0.95, max_treedepth = 15)
+)
+
+bf_violence <- bf(violent_crime_rate ~ poverty_rate + foreign_born + car(W, gr = zip, type = "bym2"))
+bf_ptsd     <- bf(pos_res ~ violent_crime_rate + poverty_rate + white_pct + 
+                    offset(log(population_raw)) + car(W, gr = zip, type = "bym2"))
+
+priors_final <- c(
+  # Predictors for Violence
+  prior(normal(0, 1), class = "b", resp = "violentcrimerate"),
+  #Predictors for PTSD
+  prior(normal(0, 1), class = "b", resp = "posres"),
+  #Spatial variance
+  prior(exponential(1), class = "sdcar", resp = "violentcrimerate"),
+  prior(exponential(1), class = "sdcar", resp = "posres")
+)
+
+fit_spatial_sem_final <- brm(
+  bf_violence + bf_ptsd + set_rescor(FALSE), 
+  data = chicago_all,
+  data2 = list(W = W),
+  family = list(gaussian(), negbinomial()),
+  prior = priors_final,
+  chains = 4, 
+  iter = 4000, 
+  warmup = 2000, 
+  cores = 4,
+  control = list(adapt_delta = 0.999, max_treedepth = 15)
 )
